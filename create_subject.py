@@ -469,9 +469,7 @@ def build_all():
     bpy.context.scene.render.engine = 'CYCLES'
     bpy.context.scene.cycles.samples = 64
 
-    # Save as subject.blend
-    bpy.ops.wm.save_as_mainfile(filepath=OUTPUT_BLEND)
-    print(f"\n✓  subject.blend saved to: {OUTPUT_BLEND}")
+    print(f"\n✓  Subject built")
     print(f"   Box body:       {B*1000:.0f}×{B*1000:.0f}×{H*1000:.0f} mm")
     print(f"   Inset border:   {BOR*1000:.0f} mm")
     print(f"   Inset depth:    {INS*1000:.0f} mm")
@@ -480,4 +478,13 @@ def build_all():
     print(f"   Hinge Ø:        {HR*2*1000:.0f} mm")
 
 
-build_all()
+# ── Entry points ──────────────────────────────────────────────────────
+# Alias so the module-loader pattern works: subject["build"]()
+build = build_all
+
+# When run directly from Blender's Scripting workspace (not via load_module),
+# build AND save subject.blend automatically.
+if __name__ == "__main__":
+    build_all()
+    bpy.ops.wm.save_as_mainfile(filepath=OUTPUT_BLEND)
+    print(f"   Saved → {OUTPUT_BLEND}")
