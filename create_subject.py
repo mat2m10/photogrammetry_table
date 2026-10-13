@@ -8,7 +8,7 @@ Object specs (ground truth for metric accuracy check):
   Box body     : 60 × 60 × 60 mm
   Inset panels : 4 mm deep, 8 mm border on each face
   Lid panel    : slightly raised 2 mm
-  Corner posts : 4 mm square, full height
+  Corner posts : 8 mm square, flush with the body sides, 1 mm taller
   Hinge (back) : 2 cylindrical barrels, 6 mm Ø × 10 mm
   Latch (front): flat plate 20×8×2 mm + pin 2 mm Ø
   Bolt hole    : 5 mm Ø through top centre
@@ -298,9 +298,12 @@ def build_box_body(wood_mat, dark_mat):
     body = new_box("BoxBody", B, B, H,
                    loc=(0, 0, half), mat=wood_mat)
 
-    # ── Corner posts (4 vertical bars, slightly proud of surface) ─────
+    # ── Corner posts (4 vertical bars) ────────────────────────────────
+    # 8 mm square, flush with the body sides (they sit inside the body
+    # footprint), and 1 mm taller than the body: 0.5 mm proud at the top
+    # and 0.5 mm below the base.
     for sx, sy in [(1,-1),(-1,-1),(1,1),(-1,1)]:
-        post = new_box(f"Post_{sx}_{sy}", CP*2, CP*2, H+0.001,
+        new_box(f"Post_{sx}_{sy}", CP*2, CP*2, H+0.001,
                        loc=(sx*(half-CP), sy*(half-CP), half),
                        mat=wood_mat)
 
@@ -339,10 +342,33 @@ def build_box_body(wood_mat, dark_mat):
     # ── Chamfer ───────────────────────────────────────────────────────
     apply_bevel(body, amount=0.0006, segments=2)
 
-    # Assign dark wood to inset faces via a second material slot
+    # Assign dark wood to the inset panel floors via a second material slot
     body.data.materials.append(dark_mat)
+    dark_index = len(body.data.materials) - 1
+    n_dark = 0
+    for poly in body.data.polygons:
+        if is_inset_floor(poly.center, poly.normal, half):
+            poly.material_index = dark_index
+            n_dark += 1
+    print(f"   Dark wood on {n_dark} inset floor face(s)")
 
     return body
+
+
+def is_inset_floor(center, normal, half, tol=1e-5):
+    """
+    True if a polygon (local coords, body centred on its own origin) is the
+    floor of an inset recess: it faces straight out along one axis, like an
+    outer face, but lies below that outer face (0 < depth < half).
+    Bevel faces are not axis-aligned and outer faces sit at +/-half, so
+    neither matches.
+    """
+    for axis in range(3):
+        n = normal[axis]
+        if abs(n) > 0.999:
+            offset = center[axis] * (1 if n > 0 else -1)
+            return tol < offset < half - tol
+    return False
 
 
 def build_hinges(metal_mat, parent_obj):
