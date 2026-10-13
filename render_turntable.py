@@ -39,7 +39,7 @@ def setup_render():
 def get_pivot():
     pivot = bpy.data.objects.get("TurntablePivot")
     if pivot is None:
-        raise RuntimeError("TurntablePivot not found — run turntable_loader.py first.")
+        raise RuntimeError("TurntablePivot not found — run turntable.py first (and open the saved turntable scene).")
     return pivot
 
 

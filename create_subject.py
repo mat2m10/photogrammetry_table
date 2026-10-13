@@ -479,10 +479,11 @@ def build_all():
 
 
 # ── Entry points ──────────────────────────────────────────────────────
-# Alias so the module-loader pattern works: subject["build"]()
+# `build()` alias, same entry-point name as turntable.py, for when this
+# file is imported as a module instead of run as a script.
 build = build_all
 
-# When run directly from Blender's Scripting workspace (not via load_module),
+# When run as a script (Blender's Scripting workspace, or `blender -P`),
 # build AND save subject.blend automatically.
 if __name__ == "__main__":
     build_all()
