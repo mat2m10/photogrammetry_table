@@ -43,6 +43,8 @@ LPW = 0.020   # latch plate width
 LPH = 0.008   # latch plate height
 LPD = 0.002   # latch plate depth
 LPR = 0.001   # latch pin radius
+BOLT_R     = 0.0025   # bolt hole radius (5 mm diameter)
+BOLT_VERTS = 32       # bolt hole cylinder segments
 
 # ─────────────────────────────────────────────────────────────────────
 
@@ -315,26 +317,32 @@ def build_box_body(wood_mat, dark_mat):
         ("y",  1),   # front
         ("y", -1),   # back
     ]
+    # Each cutter is 2*INS thick and centred on the face plane, so it cuts
+    # exactly INS deep and overshoots INS outside the body (no coplanar
+    # faces for the boolean). The body is centred at (0, 0, half).
     panel_size = B - 2*BOR   # inner panel size
     for axis, sign in face_configs:
+        face = sign * half   # face plane, relative to the body centre
         if axis == "z":
             sx, sy, sz = panel_size, panel_size, INS*2
-            lx = 0; ly = 0; lz = half*sign + sign*half - sign*INS
+            lx = 0; ly = 0; lz = half + face
         elif axis == "x":
             sx, sy, sz = INS*2, panel_size, panel_size
-            lx = half*sign + sign*half - sign*INS; ly = 0; lz = half
+            lx = face; ly = 0; lz = half
         else:  # y
             sx, sy, sz = panel_size, INS*2, panel_size
-            lx = 0; ly = half*sign + sign*half - sign*INS; lz = half
+            lx = 0; ly = face; lz = half
 
         cutter = new_box(f"Inset_{axis}{sign}", sx, sy, sz,
                          loc=(lx, ly, lz))
         boolean_diff(body, cutter)
 
     # ── Bolt hole through top centre ─────────────────────────────────
-    bolt_cyl = new_cylinder("BoltHole", r=0.0025, depth=H*1.2,
-                            loc=(0, 0, half))
+    bolt_cyl = new_cylinder("BoltHole", r=BOLT_R, depth=H*1.2,
+                            loc=(0, 0, half), verts=BOLT_VERTS)
     boolean_diff(body, bolt_cyl)
+
+    check_body_geometry(body)
 
     # ── Chamfer ───────────────────────────────────────────────────────
     apply_bevel(body, amount=0.0006, segments=2)
@@ -343,6 +351,34 @@ def build_box_body(wood_mat, dark_mat):
     body.data.materials.append(dark_mat)
 
     return body
+
+
+def expected_body_volume():
+    """Body volume (m^3) after the 6 inset cuts and the bolt hole, before bevel."""
+    panel = B - 2*BOR
+    insets = 6 * panel * panel * INS
+    # The bolt hole is a 32-sided prism; it runs between the top and bottom
+    # recess floors, i.e. over H - 2*INS.
+    bolt_area = 0.5 * BOLT_VERTS * BOLT_R**2 * math.sin(2*math.pi / BOLT_VERTS)
+    bolt = bolt_area * (H - 2*INS)
+    return B * B * H - insets - bolt
+
+
+def check_body_geometry(body, rel_tol=0.005):
+    """Print bounding box and volume vs. the spec; warn if they disagree."""
+    import bmesh
+    xs, ys, zs = zip(*(v.co for v in body.data.vertices))
+    dims = (max(xs)-min(xs), max(ys)-min(ys), max(zs)-min(zs))
+    bm = bmesh.new()
+    bm.from_mesh(body.data)
+    volume = bm.calc_volume(signed=False)
+    bm.free()
+    expected = expected_body_volume()
+    print("   Body bbox  : " + " x ".join(f"{d*1000:.2f}" for d in dims) + " mm")
+    print(f"   Body volume: {volume*1e6:.3f} cm^3 (expected {expected*1e6:.3f} cm^3)")
+    if abs(volume - expected) > rel_tol * expected:
+        print("   WARNING: body volume does not match the spec, "
+              "check the inset/bolt-hole booleans")
 
 
 def build_hinges(metal_mat, parent_obj):
