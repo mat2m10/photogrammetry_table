@@ -1,6 +1,16 @@
+"""
+turntable.py: build the turntable scene (fabric, turntable, ArUco markers,
+lights, camera) and import the subject from subject.blend.
+
+GUI : Run Script in a .blend saved next to subject.blend, then save the file.
+CLI : blender -b --python-exit-code 1 -P turntable.py -- \
+          --subject subject.blend --num-arucos 8 --aruco-bits 4 --save turntable.blend
+"""
+import argparse
 import bpy
 import math
 import os
+import sys
 
 # ─── USER PARAMETERS ────────────────────────────────────────────────
 TURNTABLE_RADIUS = 0.10
@@ -391,6 +401,26 @@ def add_lighting():
     if EXTRA_LIGHT.get("enabled", True):
         add_light(EXTRA_LIGHT, "ExtraLight")
 
+def script_argv(argv=None):
+    """Arguments after `--` on the Blender command line (none in the GUI)."""
+    if argv is not None:
+        return argv
+    return sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+
+
+def parse_args(argv=None):
+    p = argparse.ArgumentParser(
+        prog="blender -b -P turntable.py --",
+        description="Build the turntable scene around subject.blend.")
+    p.add_argument("--subject", default=SUBJECT_BLEND,
+                   help=f"subject .blend to import (default {SUBJECT_BLEND})")
+    p.add_argument("--num-arucos", type=int, default=NUM_ARUCOS)
+    p.add_argument("--aruco-bits", type=int, choices=sorted(ARUCO_DICT), default=ARUCO_BITS)
+    p.add_argument("--save", default=None,
+                   help="save the built scene to this .blend (needed when headless)")
+    return p.parse_args(script_argv(argv))
+
+
 # ── Entry point ───────────────────────────────────────────────────────
 
 def build():
@@ -424,4 +454,11 @@ def build():
     print("✓ Turntable built | subject rotating | camera static")
 
 if __name__ == "__main__":
+    args = parse_args()
+    SUBJECT_BLEND = os.path.abspath(bpy.path.abspath(args.subject))
+    NUM_ARUCOS, ARUCO_BITS = args.num_arucos, args.aruco_bits
     build()
+    if args.save:
+        out = os.path.abspath(bpy.path.abspath(args.save))
+        bpy.ops.wm.save_as_mainfile(filepath=out)
+        print(f"   Saved → {out}")

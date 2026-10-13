@@ -1,6 +1,15 @@
+"""
+render_turntable.py: render NUM_PICTURES stills of the turntable scene.
+
+GUI : open the saved turntable scene, then Run Script (uses the constants below).
+CLI : blender -b turntable.blend --python-exit-code 1 -P render_turntable.py -- \
+          --n 36 --out data/photogrammetry_pictures --format PNG --width 1280 --height 720
+"""
+import argparse
 import bpy
 import os
 import math
+import sys
 
 # ─── USER PARAMETERS ────────────────────────────────────────────────
 NUM_PICTURES     = 36
@@ -12,9 +21,38 @@ RESOLUTION_Y     = 720
 # ────────────────────────────────────────────────────────────────────
 
 
-def setup_output_dir(blend_path):
-    blend_dir  = os.path.dirname(os.path.abspath(blend_path))
-    output_dir = os.path.join(blend_dir, OUTPUT_SUBDIR)
+def script_argv(argv=None):
+    """Arguments after `--` on the Blender command line (none in the GUI)."""
+    if argv is not None:
+        return argv
+    return sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+
+
+def parse_args(argv=None):
+    p = argparse.ArgumentParser(
+        prog="blender -b <scene.blend> -P render_turntable.py --",
+        description="Render the turntable at evenly spaced angles.")
+    p.add_argument("--n", type=int, default=NUM_PICTURES,
+                   help=f"number of pictures (default {NUM_PICTURES})")
+    p.add_argument("--out", default=None,
+                   help=f"output directory (default: <blend dir>/{OUTPUT_SUBDIR})")
+    p.add_argument("--format", choices=["PNG", "JPEG", "OPEN_EXR"], default=IMAGE_FORMAT)
+    p.add_argument("--width", type=int, default=RESOLUTION_X)
+    p.add_argument("--height", type=int, default=RESOLUTION_Y)
+    args = p.parse_args(script_argv(argv))
+    if args.n < 1:
+        p.error("--n must be >= 1")
+    return args
+
+
+def setup_output_dir(blend_path, out=None):
+    if out:
+        output_dir = os.path.abspath(out)
+    else:
+        if not blend_path:
+            raise RuntimeError("The .blend is not saved: save it or pass --out")
+        blend_dir  = os.path.dirname(os.path.abspath(blend_path))
+        output_dir = os.path.join(blend_dir, OUTPUT_SUBDIR)
     os.makedirs(output_dir, exist_ok=True)
     return output_dir
 
@@ -111,6 +149,15 @@ def render_turntable(output_dir):
 
 
 # ── Main ──────────────────────────────────────────────────────────────
-output_dir = setup_output_dir(bpy.data.filepath)
-setup_render()
-render_turntable(output_dir)
+def main(argv=None):
+    global NUM_PICTURES, IMAGE_FORMAT, RESOLUTION_X, RESOLUTION_Y
+    args = parse_args(argv)
+    NUM_PICTURES, IMAGE_FORMAT = args.n, args.format
+    RESOLUTION_X, RESOLUTION_Y = args.width, args.height
+    output_dir = setup_output_dir(bpy.data.filepath, args.out)
+    setup_render()
+    render_turntable(output_dir)
+
+
+if __name__ == "__main__":
+    main()
