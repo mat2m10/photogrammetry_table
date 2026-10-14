@@ -18,12 +18,17 @@ Materials (all procedural, no image textures needed):
   Dark wood    : deeper grain for inset recesses
   Aged metal   : principled metallic + scratched bump
   Rust spots   : mixed onto metal edges via noise mask
+
+GUI : Run Script in Blender's Scripting workspace (saves //subject.blend).
+CLI : blender -b --python-exit-code 1 -P create_subject.py -- --out subject.blend
 ─────────────────────────────────────────────────────────────────────
 """
 
+import argparse
 import bpy
 import math
 import os
+import sys
 
 # ── Output path ───────────────────────────────────────────────────────
 OUTPUT_BLEND = bpy.path.abspath("//subject.blend")   # same folder as current .blend
@@ -513,6 +518,24 @@ def build_all():
     print(f"   Hinge Ø:        {HR*2*1000:.0f} mm")
 
 
+def script_argv(argv=None):
+    """Arguments after `--` on the Blender command line (none in the GUI)."""
+    if argv is not None:
+        return argv
+    return sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+
+
+def parse_args(argv=None):
+    p = argparse.ArgumentParser(
+        prog="blender -b -P create_subject.py --",
+        description="Build the benchmark box and save it as a .blend.")
+    p.add_argument("--out", default=OUTPUT_BLEND,
+                   help="where to save the subject .blend "
+                        "(default: subject.blend next to the open .blend, "
+                        "or in the current directory when none is open)")
+    return p.parse_args(script_argv(argv))
+
+
 # ── Entry points ──────────────────────────────────────────────────────
 # `build()` alias, same entry-point name as turntable.py, for when this
 # file is imported as a module instead of run as a script.
@@ -521,6 +544,9 @@ build = build_all
 # When run as a script (Blender's Scripting workspace, or `blender -P`),
 # build AND save subject.blend automatically.
 if __name__ == "__main__":
+    args = parse_args()
+    out = os.path.abspath(bpy.path.abspath(args.out))
     build_all()
-    bpy.ops.wm.save_as_mainfile(filepath=OUTPUT_BLEND)
-    print(f"   Saved → {OUTPUT_BLEND}")
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    bpy.ops.wm.save_as_mainfile(filepath=out)
+    print(f"   Saved → {out}")
