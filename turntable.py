@@ -468,14 +468,8 @@ def build():
     bg.inputs["Color"].default_value    = (0.02, 0.02, 0.02, 1)
     bg.inputs["Strength"].default_value = 0.3
 
-    scene = bpy.context.scene
-    scene.render.resolution_x = 1280
-    scene.render.resolution_y = 720
-    scene.render.fps = 24
-    scene.render.image_settings.file_format  = 'FFMPEG'
-    scene.render.ffmpeg.format = 'MPEG4'
-    scene.render.engine = 'CYCLES'
-    scene.cycles.samples = 128
+    # Render settings (engine, resolution, file format) live in one place:
+    # render_turntable.py sets them right before rendering.
 
     print("✓ Turntable built | subject rotating | camera static")
 

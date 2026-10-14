@@ -3,6 +3,8 @@ import os
 import math
 
 # ─── USER PARAMETERS ────────────────────────────────────────────────
+# This is the ONLY place render settings are defined; create_subject.py
+# and turntable.py build geometry and leave the render settings alone.
 NUM_PICTURES     = 36
 OUTPUT_SUBDIR    = "data/photogrammetry_pictures"
 IMAGE_FORMAT     = "PNG"       # PNG / JPEG / OPEN_EXR

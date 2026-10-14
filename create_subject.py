@@ -501,9 +501,8 @@ def build_all():
     bg.inputs["Color"].default_value    = (0.05, 0.05, 0.05, 1)
     bg.inputs["Strength"].default_value = 0.5
 
-    # Render engine
-    bpy.context.scene.render.engine = 'CYCLES'
-    bpy.context.scene.cycles.samples = 64
+    # No render settings here: subject.blend is only a geometry/material
+    # source for turntable.py. Rendering is configured in render_turntable.py.
 
     print(f"\n✓  Subject built")
     print(f"   Box body:       {B*1000:.0f}×{B*1000:.0f}×{H*1000:.0f} mm")
