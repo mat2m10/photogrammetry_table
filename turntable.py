@@ -474,7 +474,10 @@ def parse_args(argv=None):
     p.add_argument("--aruco-bits", type=int, choices=sorted(ARUCO_DICT), default=ARUCO_BITS)
     p.add_argument("--save", default=None,
                    help="save the built scene to this .blend (needed when headless)")
-    return p.parse_args(script_argv(argv))
+    args = p.parse_args(script_argv(argv))
+    if args.num_arucos < 1:
+        p.error("--num-arucos must be >= 1")
+    return args
 
 
 # ── Entry point ───────────────────────────────────────────────────────
@@ -510,5 +513,6 @@ if __name__ == "__main__":
     build()
     if args.save:
         out = os.path.abspath(bpy.path.abspath(args.save))
+        os.makedirs(os.path.dirname(out), exist_ok=True)
         bpy.ops.wm.save_as_mainfile(filepath=out)
         print(f"   Saved → {out}")

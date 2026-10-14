@@ -547,5 +547,6 @@ if __name__ == "__main__":
     args = parse_args()
     out = os.path.abspath(bpy.path.abspath(args.out))
     build_all()
+    os.makedirs(os.path.dirname(out), exist_ok=True)
     bpy.ops.wm.save_as_mainfile(filepath=out)
     print(f"   Saved → {out}")
