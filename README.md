@@ -50,6 +50,21 @@ data/photogrammetry_pictures/frame_001_angle_010.00deg.png
 degrees between frames, so for reconstruction the camera effectively orbits
 the object.
 
+Next to the pictures it also writes the camera ground truth for every frame:
+
+```
+data/photogrammetry_pictures/cameras.json
+data/photogrammetry_pictures/colmap/{cameras,images,points3D}.txt
+```
+
+Poses are given in the subject/turntable frame (Z up, origin at the
+turntable centre, metres), OpenCV/COLMAP camera axes (x right, y down,
+z forward), world-to-camera: `X_cam = R @ X + t`. Intrinsics are a PINHOLE
+model with pixel (0, 0) at the top-left *corner* of the image (subtract 0.5
+from cx, cy for OpenCV's pixel-centre convention). The `colmap/` folder is a
+text model with known poses and no points, usable for scoring a
+reconstruction or for COLMAP's triangulation from known poses.
+
 ## Ground truth
 
 Dimensions of the subject (`create_subject.py`, body base at Z = 0):
