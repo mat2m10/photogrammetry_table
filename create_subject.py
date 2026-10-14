@@ -8,7 +8,7 @@ Object specs (ground truth for metric accuracy check):
   Box body     : 60 × 60 × 60 mm
   Inset panels : 4 mm deep, 8 mm border on each face
   Lid panel    : slightly raised 2 mm
-  Corner posts : 4 mm square, full height
+  Corner posts : 8 mm square, flush with the body sides, 1 mm taller
   Hinge (back) : 2 cylindrical barrels, 6 mm Ø × 10 mm
   Latch (front): flat plate 20×8×2 mm + pin 2 mm Ø
   Bolt hole    : 5 mm Ø through top centre
@@ -305,9 +305,12 @@ def build_box_body(wood_mat, dark_mat):
     body = new_box("BoxBody", B, B, H,
                    loc=(0, 0, half), mat=wood_mat)
 
-    # ── Corner posts (4 vertical bars, slightly proud of surface) ─────
+    # ── Corner posts (4 vertical bars) ────────────────────────────────
+    # 8 mm square, flush with the body sides (they sit inside the body
+    # footprint), and 1 mm taller than the body: 0.5 mm proud at the top
+    # and 0.5 mm below the base.
     for sx, sy in [(1,-1),(-1,-1),(1,1),(-1,1)]:
-        post = new_box(f"Post_{sx}_{sy}", CP*2, CP*2, H+0.001,
+        new_box(f"Post_{sx}_{sy}", CP*2, CP*2, H+0.001,
                        loc=(sx*(half-CP), sy*(half-CP), half),
                        mat=wood_mat)
 
@@ -352,8 +355,25 @@ def build_box_body(wood_mat, dark_mat):
     # ── Chamfer ───────────────────────────────────────────────────────
     apply_bevel(body, amount=0.0006, segments=2)
 
-    # Assign dark wood to inset faces via a second material slot
+    # Assign dark wood to the inset panel floors via a second material slot
     body.data.materials.append(dark_mat)
+    dark_index = len(body.data.materials) - 1
+    # new_box() applies the location into the mesh, so the body's origin is
+    # at its base, not its centre: measure from the bounding-box centre.
+    centre = [sum(c[i] for c in body.bound_box) / 8 for i in range(3)]
+    floors = set()   # (axis, sign) of each recess floor found
+    n_dark = 0
+    for poly in body.data.polygons:
+        rel = [poly.center[i] - centre[i] for i in range(3)]
+        floor = inset_floor_side(rel, poly.normal, half)
+        if floor:
+            poly.material_index = dark_index
+            floors.add(floor)
+            n_dark += 1
+    # The bolt hole splits the top and bottom floors into several polygons.
+    print(f"   Dark wood on {len(floors)} inset floor(s) ({n_dark} polygons)")
+    if len(floors) != 6:
+        print("   WARNING: expected 6 inset floors, check the inset booleans")
 
     return body
 
@@ -384,6 +404,25 @@ def check_body_geometry(body, rel_tol=0.005):
     if abs(volume - expected) > rel_tol * expected:
         print("   WARNING: body volume does not match the spec, "
               "check the inset/bolt-hole booleans")
+
+
+def inset_floor_side(offset, normal, half, tol=1e-5):
+    """
+    If a polygon is the floor of an inset recess, return its side as
+    (axis, sign); otherwise None. `offset` is the polygon centre relative to
+    the body centre. A floor faces straight out along one axis, like an
+    outer face, but lies below that outer face (0 < depth < half).
+    Bevel faces are not axis-aligned, outer faces sit at +/-half, and recess
+    and bolt-hole walls face inwards, so none of them match.
+    """
+    for axis in range(3):
+        n = normal[axis]
+        if abs(n) > 0.999:
+            sign = 1 if n > 0 else -1
+            if tol < offset[axis] * sign < half - tol:
+                return (axis, sign)
+            return None
+    return None
 
 
 def build_hinges(metal_mat, parent_obj):
