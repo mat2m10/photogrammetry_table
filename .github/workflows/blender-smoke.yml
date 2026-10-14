@@ -75,6 +75,12 @@ jobs:
           n=$(find data/photogrammetry_pictures -name 'frame_*.png' | wc -l)
           echo "rendered: $n"
           test "$n" -eq 2
+          # camera ground truth: one pose per rendered picture
+          test -s data/photogrammetry_pictures/cameras.json
+          test -s data/photogrammetry_pictures/colmap/cameras.txt
+          m=$(grep -c 'frame_' data/photogrammetry_pictures/colmap/images.txt)
+          echo "colmap images: $m"
+          test "$m" -eq 2
 
       - name: Upload renders
         if: always()
