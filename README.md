@@ -34,6 +34,23 @@ camera distance and elevation) are constants at the top of each script.
 **Careful:** `create_subject.py` and `turntable.py` start by deleting every
 object in the open scene.
 
+### Headless (command line)
+
+The same three steps run without the GUI. Script options go after `--`;
+without options each script uses the constants at its top, as in the GUI.
+
+```bash
+blender -b --python-exit-code 1 -P create_subject.py -- --out subject.blend
+blender -b --python-exit-code 1 -P turntable.py -- \
+    --subject subject.blend --num-arucos 8 --aruco-bits 4 --save turntable.blend
+blender -b turntable.blend --python-exit-code 1 -P render_turntable.py -- \
+    --n 36 --out data/photogrammetry_pictures --format PNG --width 1280 --height 720
+```
+
+Pass `--help` after `--` to list a script's options. EEVEE needs an OpenGL
+context, so on a Linux machine without a display run the render step under
+`xvfb-run -a` (as the CI smoke test does).
+
 ## Output
 
 `render_turntable.py` writes to `data/photogrammetry_pictures/` (next to the
