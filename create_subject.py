@@ -358,12 +358,22 @@ def build_box_body(wood_mat, dark_mat):
     # Assign dark wood to the inset panel floors via a second material slot
     body.data.materials.append(dark_mat)
     dark_index = len(body.data.materials) - 1
+    # new_box() applies the location into the mesh, so the body's origin is
+    # at its base, not its centre: measure from the bounding-box centre.
+    centre = [sum(c[i] for c in body.bound_box) / 8 for i in range(3)]
+    floors = set()   # (axis, sign) of each recess floor found
     n_dark = 0
     for poly in body.data.polygons:
-        if is_inset_floor(poly.center, poly.normal, half):
+        rel = [poly.center[i] - centre[i] for i in range(3)]
+        floor = inset_floor_side(rel, poly.normal, half)
+        if floor:
             poly.material_index = dark_index
+            floors.add(floor)
             n_dark += 1
-    print(f"   Dark wood on {n_dark} inset floor face(s)")
+    # The bolt hole splits the top and bottom floors into several polygons.
+    print(f"   Dark wood on {len(floors)} inset floor(s) ({n_dark} polygons)")
+    if len(floors) != 6:
+        print("   WARNING: expected 6 inset floors, check the inset booleans")
 
     return body
 
@@ -396,20 +406,23 @@ def check_body_geometry(body, rel_tol=0.005):
               "check the inset/bolt-hole booleans")
 
 
-def is_inset_floor(center, normal, half, tol=1e-5):
+def inset_floor_side(offset, normal, half, tol=1e-5):
     """
-    True if a polygon (local coords, body centred on its own origin) is the
-    floor of an inset recess: it faces straight out along one axis, like an
+    If a polygon is the floor of an inset recess, return its side as
+    (axis, sign); otherwise None. `offset` is the polygon centre relative to
+    the body centre. A floor faces straight out along one axis, like an
     outer face, but lies below that outer face (0 < depth < half).
-    Bevel faces are not axis-aligned and outer faces sit at +/-half, so
-    neither matches.
+    Bevel faces are not axis-aligned, outer faces sit at +/-half, and recess
+    and bolt-hole walls face inwards, so none of them match.
     """
     for axis in range(3):
         n = normal[axis]
         if abs(n) > 0.999:
-            offset = center[axis] * (1 if n > 0 else -1)
-            return tol < offset < half - tol
-    return False
+            sign = 1 if n > 0 else -1
+            if tol < offset[axis] * sign < half - tol:
+                return (axis, sign)
+            return None
+    return None
 
 
 def build_hinges(metal_mat, parent_obj):
