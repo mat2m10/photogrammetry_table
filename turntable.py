@@ -1,6 +1,16 @@
+"""
+turntable.py: build the turntable scene (fabric, turntable, ArUco markers,
+lights, camera) and import the subject from subject.blend.
+
+GUI : Run Script in a .blend saved next to subject.blend, then save the file.
+CLI : blender -b --python-exit-code 1 -P turntable.py -- \
+          --subject subject.blend --num-arucos 8 --aruco-bits 4 --save turntable.blend
+"""
+import argparse
 import bpy
 import math
 import os
+import sys
 
 # ─── USER PARAMETERS ────────────────────────────────────────────────
 TURNTABLE_RADIUS = 0.10
@@ -11,7 +21,7 @@ FRAME_END        = 120
 SUBJECT_BLEND    = "//subject.blend"
 
 NUM_ARUCOS             = 8
-ARUCO_SIZE             = 0.018
+ARUCO_SIZE             = 0.018   # black-border edge length (m)
 ARUCO_BITS             = 4
 ARUCO_PLACEMENT_RADIUS = 0.08
 
@@ -58,56 +68,106 @@ EXTRA_LIGHT = {
 # ────────────────────────────────────────────────────────────────────
 
 ARUCO_DICT = {4:"DICT_4X4_50", 5:"DICT_5X5_100", 6:"DICT_6X6_250", 7:"DICT_7X7_1000"}
-ARUCO_PATTERNS = {
+# Real OpenCV ArUco dictionaries, first 50 markers of each, baked in so the
+# script needs no OpenCV inside Blender. Each marker is an int whose bits are
+# the inner bits×bits cells in row-major order, most significant bit = top-left
+# cell, bit 1 = WHITE (OpenCV convention). The 1-cell border is always black.
+# Regenerate with (opencv-python >= 4.7):
+#   d = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+#   img = cv2.aruco.generateImageMarker(d, marker_id, bits + 2)  # 1 px per cell
+#   code = int("".join("1" if v > 127 else "0" for v in img[1:-1, 1:-1].flat), 2)
+ARUCO_CODES = {
     "DICT_4X4_50": [
-        [[1,0,0,0],[0,1,1,1],[0,1,1,1],[0,1,1,1]],
-        [[1,0,0,0],[0,1,1,1],[0,1,1,0],[0,1,0,1]],
-        [[1,0,0,1],[0,1,1,0],[1,0,0,1],[0,1,1,0]],
-        [[1,0,0,1],[0,1,0,1],[1,0,1,0],[0,1,0,1]],
-        [[1,0,1,0],[1,0,1,0],[0,1,0,1],[1,0,1,0]],
-        [[1,0,1,0],[1,0,0,1],[0,1,1,0],[1,0,0,1]],
-        [[1,0,1,1],[1,0,0,0],[0,1,1,1],[1,0,0,0]],
-        [[1,0,1,1],[1,0,1,0],[0,1,0,1],[1,0,1,0]],
+        0xb532, 0x0f9a, 0x332d, 0x9946, 0x549e, 0x79cd, 0x9e2e, 0xc4f2, 0xfeda, 0xcf56,
+        0xf991, 0x11a7, 0x0eb7, 0x2a0f, 0x24b1, 0x263e, 0x4665, 0x6600, 0x6c5e, 0x76af,
+        0x868b, 0xb02b, 0xccd5, 0xdd82, 0xfe47, 0x9471, 0xace4, 0xa554, 0x2123, 0x346f,
+        0x4415, 0x57b2, 0x9ecf, 0xf0cb, 0x08ae, 0x0929, 0x1875, 0x04ff, 0x0df6, 0x1c5a,
+        0x1718, 0x2a28, 0x328c, 0x38b2, 0x24e8, 0x2eeb, 0x2d3f, 0x4b64, 0x502e, 0x5013,
     ],
     "DICT_5X5_100": [
-        [[1,0,0,0,0],[0,1,1,1,1],[0,1,1,1,1],[0,1,1,1,1],[0,1,1,1,1]],
-        [[1,0,0,0,1],[0,1,1,1,0],[1,0,0,0,1],[0,1,1,1,0],[1,0,0,0,1]],
-        [[1,0,0,1,0],[1,0,0,1,0],[0,1,1,0,1],[1,0,0,1,0],[0,1,1,0,1]],
-        [[1,0,0,1,1],[1,0,0,0,0],[0,1,1,1,1],[1,0,0,0,0],[0,1,1,1,1]],
-        [[1,0,1,0,0],[0,1,0,1,1],[1,0,1,0,0],[0,1,0,1,1],[1,0,1,0,0]],
-        [[1,0,1,0,1],[0,1,0,1,0],[1,0,1,0,1],[0,1,0,1,0],[1,0,1,0,1]],
-        [[1,0,1,1,0],[0,1,0,0,1],[1,0,1,1,0],[0,1,0,0,1],[1,0,1,1,0]],
-        [[1,0,1,1,1],[0,1,0,0,0],[1,0,1,1,1],[0,1,0,0,0],[1,0,1,1,1]],
+        0x145b2bc, 0x01c06e6, 0x1af0edd, 0x10395f7, 0x1aeb524, 0x1d4082d, 0x0d3d7ec, 0x0e2146b,
+        0x10d6132, 0x1313fa5, 0x13cee03, 0x1a2dac0, 0x1e62b11, 0x05e7166, 0x1fcfca8, 0x051e37f,
+        0x097a758, 0x0bea26f, 0x0f64dc4, 0x1061de8, 0x12dda75, 0x150e440, 0x16b0ca1, 0x0ba12de,
+        0x19cd023, 0x1a59972, 0x1c3ce8b, 0x0224246, 0x03b9672, 0x024223b, 0x027376e, 0x0368873,
+        0x040d0ce, 0x04aaac8, 0x04643ba, 0x07a6fea, 0x0998aac, 0x082d101, 0x09aad1d, 0x0863c72,
+        0x0ad2825, 0x0a52f9e, 0x0d849f7, 0x0c309d9, 0x0da7e31, 0x0e9627a, 0x0e9b997, 0x0f94806,
+        0x0f59125, 0x0f6b7d7,
     ],
     "DICT_6X6_250": [
-        [[1,0,0,0,0,0],[0,1,1,1,1,1],[0,1,1,1,1,1],[0,1,1,1,1,1],[0,1,1,1,1,1],[0,1,1,1,1,1]],
-        [[1,0,0,0,0,1],[0,1,1,1,1,0],[1,0,0,0,0,1],[0,1,1,1,1,0],[1,0,0,0,0,1],[0,1,1,1,1,0]],
-        [[1,0,0,0,1,0],[1,0,0,0,1,0],[0,1,1,1,0,1],[1,0,0,0,1,0],[0,1,1,1,0,1],[1,0,0,0,1,0]],
-        [[1,0,0,0,1,1],[1,0,0,0,0,0],[0,1,1,1,1,1],[1,0,0,0,0,0],[0,1,1,1,1,1],[1,0,0,0,0,0]],
-        [[1,0,0,1,0,0],[0,1,1,0,1,1],[1,0,0,1,0,0],[0,1,1,0,1,1],[1,0,0,1,0,0],[0,1,1,0,1,1]],
-        [[1,0,0,1,0,1],[0,1,1,0,1,0],[1,0,0,1,0,1],[0,1,1,0,1,0],[1,0,0,1,0,1],[0,1,1,0,1,0]],
-        [[1,0,0,1,1,0],[0,1,1,0,0,1],[1,0,0,1,1,0],[0,1,1,0,0,1],[1,0,0,1,1,0],[0,1,1,0,0,1]],
-        [[1,0,0,1,1,1],[0,1,1,0,0,0],[1,0,0,1,1,1],[0,1,1,0,0,0],[1,0,0,1,1,1],[0,1,1,0,0,0]],
+        0x1e3dd82a6, 0x0efba3891, 0x15907eacd, 0xc91b3069e, 0xd607d6e15, 0xd8e8e0e68,
+        0x4268b41f5, 0x88a50f29a, 0x307d524fd, 0x3c2f34b3c, 0x45dfc74e3, 0x48d85b257,
+        0x710558fc6, 0x86dcfad07, 0x8d72a93f6, 0xa2b89dcde, 0x09fd1e9c4, 0x154dbd18f,
+        0x300a310e2, 0x4807efafd, 0x56df11db6, 0x66883274c, 0x76e8cb781, 0x9a53d9cf3,
+        0xa9cb84024, 0xc67549490, 0xc1d288941, 0xe7480852b, 0xea2fca848, 0xe963b77b1,
+        0xfa36652af, 0x065bff7bd, 0x0541d72d6, 0x0cf7246a2, 0x1338a39eb, 0x15a893e74,
+        0x3a417ee9e, 0x4f11e26c0, 0x530db6d20, 0x589bfae34, 0x6409e8a0b, 0x60537a891,
+        0x6159069ba, 0x6bff78d7b, 0x70ad96a4f, 0x75846f71a, 0x7a95192fc, 0x8609760aa,
+        0x8a2d44c3f, 0x93eb78b14,
     ],
     "DICT_7X7_1000": [
-        [[1,0,0,0,0,0,0],[0,1,1,1,1,1,1],[0,1,1,1,1,1,1],[0,1,1,1,1,1,1],[0,1,1,1,1,1,1],[0,1,1,1,1,1,1],[0,1,1,1,1,1,1]],
-        [[1,0,0,0,0,0,1],[0,1,1,1,1,1,0],[1,0,0,0,0,0,1],[0,1,1,1,1,1,0],[1,0,0,0,0,0,1],[0,1,1,1,1,1,0],[1,0,0,0,0,0,1]],
-        [[1,0,0,0,0,1,0],[1,0,0,0,0,1,0],[0,1,1,1,1,0,1],[1,0,0,0,0,1,0],[0,1,1,1,1,0,1],[1,0,0,0,0,1,0],[0,1,1,1,1,0,1]],
-        [[1,0,0,0,0,1,1],[1,0,0,0,0,0,0],[0,1,1,1,1,1,1],[1,0,0,0,0,0,0],[0,1,1,1,1,1,1],[1,0,0,0,0,0,0],[0,1,1,1,1,1,1]],
-        [[1,0,0,0,1,0,0],[0,1,1,1,0,1,1],[1,0,0,0,1,0,0],[0,1,1,1,0,1,1],[1,0,0,0,1,0,0],[0,1,1,1,0,1,1],[1,0,0,0,1,0,0]],
-        [[1,0,0,0,1,0,1],[0,1,1,1,0,1,0],[1,0,0,0,1,0,1],[0,1,1,1,0,1,0],[1,0,0,0,1,0,1],[0,1,1,1,0,1,0],[1,0,0,0,1,0,1]],
-        [[1,0,0,0,1,1,0],[0,1,1,1,0,0,1],[1,0,0,0,1,1,0],[0,1,1,1,0,0,1],[1,0,0,0,1,1,0],[0,1,1,1,0,0,1],[1,0,0,0,1,1,0]],
-        [[1,0,0,0,1,1,1],[0,1,1,1,0,0,0],[1,0,0,0,1,1,1],[0,1,1,1,0,0,0],[1,0,0,0,1,1,1],[0,1,1,1,0,0,0],[1,0,0,0,1,1,1]],
+        0x1bab8d94b9415, 0x1c837e27c8156, 0x13d545758ba4f, 0x14cce0b6fd298, 0x18d78f62664ac,
+        0x0b1002846b3dc, 0x1a6d77cdea890, 0x07942db1117b6, 0x1120e3ead2d3c, 0x176cb631adc7e,
+        0x1ea01a305e921, 0x0044ce170a834, 0x0a9e6d72e91e1, 0x13c49108c4733, 0x17bfe64d79397,
+        0x19c220b60b52f, 0x1a7e0c2e43f16, 0x003c33d9d91db, 0x04d979854e0f1, 0x070fa9aec8226,
+        0x0752095d3c3d3, 0x08da908f679ba, 0x091254fbd3c57, 0x0bced87c93150, 0x0e945bdf45f11,
+        0x128bbc45026b2, 0x136252ac9db47, 0x143a9285b05f0, 0x176f1cc62d9a1, 0x1976bbb97b630,
+        0x1a7cbdd6f0666, 0x1e528467fa339, 0x1fbada33e77cd, 0x0748c49dd09dd, 0x0c430fc48761e,
+        0x0159a86df3b86, 0x01c81a9871c04, 0x0293fb340c448, 0x03345c234cbda, 0x056a104fc3668,
+        0x052d271253f46, 0x059eea9b7e8ad, 0x06bd27f3c6cf8, 0x07ee957b07be7, 0x089a053e9fe80,
+        0x09081c90855ea, 0x0be3226d06804, 0x0bd64e4807abb, 0x0df36483e2b84, 0x0e555f24151c7,
     ],
 }
+
+
+def aruco_bits(marker_id, bits):
+    """Inner bit matrix (list of rows, 1 = white) of an OpenCV ArUco marker."""
+    dict_name = ARUCO_DICT[bits]
+    codes = ARUCO_CODES[dict_name]
+    if not 0 <= marker_id < len(codes):
+        raise ValueError(f"{dict_name}: only ids 0..{len(codes)-1} are baked in "
+                         f"(asked for id {marker_id}); lower NUM_ARUCOS")
+    code = codes[marker_id]
+    n = bits * bits
+    flat = [(code >> (n - 1 - k)) & 1 for k in range(n)]
+    return [flat[r*bits:(r+1)*bits] for r in range(bits)]
+
+
+ARUCO_QUIET_ZONE = 1   # white cells around the black border, helps detection
+
+
+def aruco_grid(marker_id, bits, quiet=ARUCO_QUIET_ZONE):
+    """
+    Full marker as rows of 0 (black) / 1 (white), top row first:
+    `quiet` white cells, a 1-cell black border, then the data bits.
+    """
+    inner = aruco_bits(marker_id, bits)
+    size = bits + 2 + 2 * quiet
+    grid = [[1] * size for _ in range(size)]                       # quiet zone
+    for r in range(bits + 2):
+        for c in range(bits + 2):
+            grid[quiet + r][quiet + c] = 0                         # black border
+    for r in range(bits):
+        for c in range(bits):
+            grid[quiet + 1 + r][quiet + 1 + c] = inner[r][c]
+    return grid
 
 # ─────────────────────────────────────────────────────────────────────
 
 def clear_scene():
-    bpy.ops.object.select_all(action='SELECT')
-    bpy.ops.object.delete()
-    for block in bpy.data.meshes:
-        bpy.data.meshes.remove(block)
+    """
+    Delete every object and the data-blocks a previous run created, so
+    re-running does not pile up WoodMat.001, ArUco_* images, lights, ...
+    Note: this wipes ALL materials/images/etc. in the open .blend.
+    """
+    for obj in list(bpy.data.objects):
+        bpy.data.objects.remove(obj, do_unlink=True)
+    for collection in (bpy.data.meshes, bpy.data.materials,
+                       bpy.data.lights, bpy.data.cameras, bpy.data.actions):
+        for block in list(collection):
+            collection.remove(block)
+    for img in list(bpy.data.images):
+        if img.type not in {'RENDER_RESULT', 'COMPOSITING'}:   # keep Blender's own
+            bpy.data.images.remove(img)
 
 def make_wood_material():
     mat = bpy.data.materials.new("WoodMat")
@@ -282,20 +342,20 @@ def import_subject(blend_path, pivot):
 
     return imported
 
+def aruco_pixels(grid):
+    """Flat RGBA list in Blender's pixel order (bottom row first)."""
+    pixels = []
+    for row in reversed(grid):
+        for v in row:
+            pixels += [float(v), float(v), float(v), 1.0]
+    return pixels
+
 def make_aruco_texture(marker_id, bits, dict_name):
-    grid_size = bits + 2
-    pattern   = ARUCO_PATTERNS[dict_name][marker_id]
-    grid = [[1]*grid_size for _ in range(grid_size)]
-    for r in range(bits):
-        for c in range(bits):
-            grid[r+1][c+1] = pattern[r][c]
+    grid = aruco_grid(marker_id, bits)
+    grid_size = len(grid)
     img = bpy.data.images.new(f"ArUco_{dict_name}_id{marker_id}",
                                width=grid_size, height=grid_size, alpha=False)
-    pixels = []
-    for r in reversed(range(grid_size)):
-        for c in range(grid_size):
-            v = 0.0 if grid[r][c] == 1 else 1.0
-            pixels += [v, v, v, 1.0]
+    pixels = aruco_pixels(grid)
     img.pixels = pixels
     img.pack()
     return img
@@ -320,9 +380,15 @@ def place_arucos(num, size, bits, placement_radius, pivot):
     dict_name = ARUCO_DICT.get(bits)
     if not dict_name:
         raise ValueError(f"ARUCO_BITS must be 4-7, got {bits}")
+    if num > len(ARUCO_CODES[dict_name]):
+        raise ValueError(f"NUM_ARUCOS={num} but only {len(ARUCO_CODES[dict_name])} "
+                         f"{dict_name} markers are baked in")
+    # `size` is the black-border marker size (what a detector measures);
+    # the plane is larger by the white quiet zone around it.
+    plane_size = size * (bits + 2 + 2 * ARUCO_QUIET_ZONE) / (bits + 2)
     for i in range(num):
         angle = 2 * math.pi * i / num
-        bpy.ops.mesh.primitive_plane_add(size=size, location=(0, 0, 0.001))
+        bpy.ops.mesh.primitive_plane_add(size=plane_size, location=(0, 0, 0.001))
         m = bpy.context.object
         m.name = f"ArUco_id{i}"
         m.location.x = placement_radius * math.cos(angle)
@@ -391,6 +457,29 @@ def add_lighting():
     if EXTRA_LIGHT.get("enabled", True):
         add_light(EXTRA_LIGHT, "ExtraLight")
 
+def script_argv(argv=None):
+    """Arguments after `--` on the Blender command line (none in the GUI)."""
+    if argv is not None:
+        return argv
+    return sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+
+
+def parse_args(argv=None):
+    p = argparse.ArgumentParser(
+        prog="blender -b -P turntable.py --",
+        description="Build the turntable scene around subject.blend.")
+    p.add_argument("--subject", default=SUBJECT_BLEND,
+                   help=f"subject .blend to import (default {SUBJECT_BLEND})")
+    p.add_argument("--num-arucos", type=int, default=NUM_ARUCOS)
+    p.add_argument("--aruco-bits", type=int, choices=sorted(ARUCO_DICT), default=ARUCO_BITS)
+    p.add_argument("--save", default=None,
+                   help="save the built scene to this .blend (needed when headless)")
+    args = p.parse_args(script_argv(argv))
+    if args.num_arucos < 1:
+        p.error("--num-arucos must be >= 1")
+    return args
+
+
 # ── Entry point ───────────────────────────────────────────────────────
 
 def build():
@@ -412,16 +501,18 @@ def build():
     bg.inputs["Color"].default_value    = (0.02, 0.02, 0.02, 1)
     bg.inputs["Strength"].default_value = 0.3
 
-    scene = bpy.context.scene
-    scene.render.resolution_x = 1280
-    scene.render.resolution_y = 720
-    scene.render.fps = 24
-    scene.render.image_settings.file_format  = 'FFMPEG'
-    scene.render.ffmpeg.format = 'MPEG4'
-    scene.render.engine = 'CYCLES'
-    scene.cycles.samples = 128
+    # Render settings (engine, resolution, file format) live in one place:
+    # render_turntable.py sets them right before rendering.
 
     print("✓ Turntable built | subject rotating | camera static")
 
 if __name__ == "__main__":
+    args = parse_args()
+    SUBJECT_BLEND = os.path.abspath(bpy.path.abspath(args.subject))
+    NUM_ARUCOS, ARUCO_BITS = args.num_arucos, args.aruco_bits
     build()
+    if args.save:
+        out = os.path.abspath(bpy.path.abspath(args.save))
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        bpy.ops.wm.save_as_mainfile(filepath=out)
+        print(f"   Saved → {out}")
