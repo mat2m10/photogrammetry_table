@@ -144,10 +144,20 @@ def aruco_grid(marker_id, bits, quiet=ARUCO_QUIET_ZONE):
 # ─────────────────────────────────────────────────────────────────────
 
 def clear_scene():
-    bpy.ops.object.select_all(action='SELECT')
-    bpy.ops.object.delete()
-    for block in bpy.data.meshes:
-        bpy.data.meshes.remove(block)
+    """
+    Delete every object and the data-blocks a previous run created, so
+    re-running does not pile up WoodMat.001, ArUco_* images, lights, ...
+    Note: this wipes ALL materials/images/etc. in the open .blend.
+    """
+    for obj in list(bpy.data.objects):
+        bpy.data.objects.remove(obj, do_unlink=True)
+    for collection in (bpy.data.meshes, bpy.data.materials,
+                       bpy.data.lights, bpy.data.cameras, bpy.data.actions):
+        for block in list(collection):
+            collection.remove(block)
+    for img in list(bpy.data.images):
+        if img.type not in {'RENDER_RESULT', 'COMPOSITING'}:   # keep Blender's own
+            bpy.data.images.remove(img)
 
 def make_wood_material():
     mat = bpy.data.materials.new("WoodMat")
