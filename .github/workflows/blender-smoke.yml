@@ -1,0 +1,85 @@
+# Smoke test: build the subject, build the turntable scene and render 2 small
+# pictures with a pinned Blender, failing on any Python exception.
+name: blender-smoke
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      BLENDER_SERIES: "4.2"
+      BLENDER_VERSION: "4.2.3"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Blender
+        id: cache-blender
+        uses: actions/cache@v4
+        with:
+          path: blender
+          key: blender-${{ env.BLENDER_VERSION }}-linux-x64
+
+      - name: Download Blender ${{ env.BLENDER_VERSION }}
+        if: steps.cache-blender.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL -o blender.tar.xz \
+            "https://download.blender.org/release/Blender${BLENDER_SERIES}/blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+          mkdir blender
+          tar -xf blender.tar.xz -C blender --strip-components=1
+          rm blender.tar.xz
+
+      # EEVEE needs an OpenGL context: run under Xvfb with Mesa's software renderer.
+      - name: Install system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb libgl1 libegl1 libglx-mesa0 libgl1-mesa-dri \
+            libxi6 libxxf86vm1 libxfixes3 libxrender1 libxkbcommon0 libsm6
+
+      - name: Blender version
+        run: ./blender/blender -b --factory-startup --version
+
+      # The scripts take their settings from constants; shrink the render for CI.
+      - name: Limit render to 2 pictures at 320x180 (CI copy only)
+        run: |
+          sed -i -E \
+            -e 's/^NUM_PICTURES( *)= *[0-9]+/NUM_PICTURES\1= 2/' \
+            -e 's/^RESOLUTION_X( *)= *[0-9]+/RESOLUTION_X\1= 320/' \
+            -e 's/^RESOLUTION_Y( *)= *[0-9]+/RESOLUTION_Y\1= 180/' \
+            render_turntable.py
+          grep -E '^(NUM_PICTURES|RESOLUTION_X|RESOLUTION_Y) ' render_turntable.py
+
+      - name: create_subject.py
+        run: ./blender/blender -b --factory-startup --python-exit-code 1 -P create_subject.py
+
+      - name: turntable.py
+        run: |
+          ./blender/blender -b --factory-startup --python-exit-code 1 \
+            -P turntable.py \
+            --python-expr "import bpy; bpy.ops.wm.save_as_mainfile(filepath='turntable.blend')"
+
+      - name: render_turntable.py
+        run: |
+          xvfb-run -a -s "-screen 0 1280x1024x24" \
+            ./blender/blender -b --factory-startup turntable.blend \
+            --python-exit-code 1 -P render_turntable.py
+
+      - name: Check renders
+        run: |
+          ls -l data/photogrammetry_pictures
+          n=$(find data/photogrammetry_pictures -name 'frame_*.png' | wc -l)
+          echo "rendered: $n"
+          test "$n" -eq 2
+
+      - name: Upload renders
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-renders
+          path: data/photogrammetry_pictures
+          if-no-files-found: ignore

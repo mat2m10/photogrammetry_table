@@ -4,6 +4,8 @@ import os
 import math
 
 # ─── USER PARAMETERS ────────────────────────────────────────────────
+# This is the ONLY place render settings are defined; create_subject.py
+# and turntable.py build geometry and leave the render settings alone.
 NUM_PICTURES     = 36
 OUTPUT_SUBDIR    = "data/photogrammetry_pictures"
 IMAGE_FORMAT     = "PNG"       # PNG / JPEG / OPEN_EXR
@@ -20,9 +22,37 @@ def setup_output_dir(blend_path):
     return output_dir
 
 
+# Written for Blender 4.2 LTS. The materials need >= 4.0 (Principled BSDF v2
+# input names), and the EEVEE engine id changed between releases:
+#   < 4.2 : 'BLENDER_EEVEE'       (legacy EEVEE)
+#   4.2+  : 'BLENDER_EEVEE_NEXT'
+#   5.0+  : 'BLENDER_EEVEE' again (EEVEE Next renamed back)
+MIN_BLENDER_VERSION = (4, 0, 0)
+EEVEE_ENGINE_IDS    = ('BLENDER_EEVEE_NEXT', 'BLENDER_EEVEE')
+
+
+def check_blender_version():
+    if bpy.app.version < MIN_BLENDER_VERSION:
+        raise RuntimeError(
+            f"Blender {bpy.app.version_string} is too old: these scripts need "
+            f"{'.'.join(map(str, MIN_BLENDER_VERSION))} or newer (target: 4.2 LTS).")
+
+
+def set_eevee_engine(scene):
+    """Select whichever EEVEE engine id this Blender version knows."""
+    for engine_id in EEVEE_ENGINE_IDS:
+        try:
+            scene.render.engine = engine_id
+            return engine_id
+        except TypeError:   # unknown enum value in this Blender version
+            continue
+    raise RuntimeError(f"No EEVEE engine found (tried {EEVEE_ENGINE_IDS}) "
+                       f"in Blender {bpy.app.version_string}")
+
+
 def setup_render():
     scene = bpy.context.scene
-    scene.render.engine                = 'BLENDER_EEVEE_NEXT'
+    engine_id = set_eevee_engine(scene)
     scene.render.resolution_x          = RESOLUTION_X
     scene.render.resolution_y          = RESOLUTION_Y
     scene.render.resolution_percentage = 100
@@ -30,11 +60,18 @@ def setup_render():
     if IMAGE_FORMAT == "JPEG":
         scene.render.image_settings.quality = JPEG_QUALITY
     scene.render.film_transparent = False
+    # These EEVEE options were renamed or removed across 4.x / 5.x releases;
+    # set them only where they exist.
     eevee = scene.eevee
-    eevee.use_shadows   = True
-    eevee.use_gtao      = True
-    eevee.gtao_distance = 0.05
-    print(f"   Engine : EEVEE Next  {RESOLUTION_X}x{RESOLUTION_Y}")
+    for attr, value in (("use_shadows", True),
+                        ("use_gtao", True),
+                        ("gtao_distance", 0.05)):
+        if hasattr(eevee, attr):
+            setattr(eevee, attr, value)
+        else:
+            print(f"   (skipping scene.eevee.{attr}: not in this Blender version)")
+    print(f"   Blender {bpy.app.version_string}  Engine : {engine_id}  "
+          f"{RESOLUTION_X}x{RESOLUTION_Y}")
 
 
 # ─── Camera ground truth ────────────────────────────────────────────
@@ -181,7 +218,7 @@ def write_ground_truth(output_dir, intrinsics, frames):
 def get_pivot():
     pivot = bpy.data.objects.get("TurntablePivot")
     if pivot is None:
-        raise RuntimeError("TurntablePivot not found — run turntable_loader.py first.")
+        raise RuntimeError("TurntablePivot not found — run turntable.py first (and open the saved turntable scene).")
     return pivot
 
 
@@ -266,6 +303,7 @@ def render_turntable(output_dir):
 
 # ── Main ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
+    check_blender_version()
     output_dir = setup_output_dir(bpy.data.filepath)
     setup_render()
     render_turntable(output_dir)
